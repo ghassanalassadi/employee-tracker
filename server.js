@@ -1,10 +1,9 @@
 // import required packages
+require('dotenv').config();
 const express = require('express');
 const mysql = require('mysql2');
 const inquirer = require('inquirer');
 const cTable = require('console.table');
-const e = require('express');
-const { response } = require('express');
 
 const app = express();
 
@@ -19,7 +18,7 @@ const db = mysql.createConnection(
     {
         host: "localhost",
         user: process.env.DB_USER,
-        port: 3001,
+        port: 3306,
         password: process.env.DB_PASSWORD,
         database: process.env.DB_NAME,
     }
@@ -39,41 +38,38 @@ function userOptions() {
         {
             type: 'list',
             name: 'userSelection',
-            message: 'What would you like to do?',
+            message: 'What would you like to do? (Press Ctrl + C to exit application).',
             loop: false,
             choices: ['View All Departments', 'View All Roles', 'View All Employees', 'Add A Department', 'Add A Role', 'Add An Employee', 'Update Employee Role']
         }
     ];
 
-    try {
-        inquirer.prompt(question).then((response) => {
-            switch(response.userSelection) {
-                case 'View All Departments':
-                    viewTable('department');
-                    break;
-                case 'View All Roles':
-                    viewTable('employee_role');
-                    break;
-                case 'View All Employees':
-                    viewTable('employee')
-                    break;
-                case 'Add A Department':
-                    addDepartment();
-                    break;
-                case 'Add A Role':
-                    addRole();
-                    break;
-                case 'Add An Employee':
-                    addEmployee();
-                    break;
-                case 'Update Employee Role':
-                    updateEmployee();
-                    break;
-            }
-        })
-    } catch (err) {
-        console.error(err);
-    }
+
+    inquirer.prompt(question).then((response) => {
+        switch(response.userSelection) {
+            case 'View All Departments':
+                viewTable('department');
+                break;
+            case 'View All Roles':
+                viewTable('employee_role');
+                break;
+            case 'View All Employees':
+                viewTable('employee')
+                break;
+            case 'Add A Department':
+                addDepartment();
+                break;
+            case 'Add A Role':
+                addRole();
+                break;
+            case 'Add An Employee':
+                addEmployee();
+                break;
+            case 'Update Employee Role':
+                updateEmployee();
+                break;
+        }
+    })
 }
 
 function viewTable(table) {
@@ -105,7 +101,7 @@ function addDepartment() {
     ];
 
     inquirer.prompt(question).then((response) => {
-        const dbQuery = `INSERT INTO department (departmentName) VALUES (?)`;
+        const dbQuery = `INSERT INTO department (dep_name) VALUES (?)`;
         db.query(dbQuery, [response.departmentName], (err) => {
             if (err) throw err;
             console.log(`Department ${response.departmentName} successfully added!`);
@@ -115,12 +111,12 @@ function addDepartment() {
 }
 
 function addRole() {
-    const departments = [];
+    const departmentList = [];
         const questions = [
         {
             type: 'input',
             name: 'roleTitle',
-            message: 'What is the title of the title of the new role?'
+            message: 'What is the title of the new role?'
         },
         {
             type: 'input',
@@ -130,38 +126,41 @@ function addRole() {
         {
             type: 'list',
             name: 'roleDepartment',
-            choices: departments,
+            choices: departmentList,
             message: 'Which department is this role in?'
         }
     ];
 
-    db.query('SELECT * FROM department', (res) => {
-        try {
-            res.forEach(department => {
-                let depObj = {
-                name: department.name,
-                id: department.id
-                }
-                departments.push(depObj);
-            });
-        } catch (err) {
-            console.error(err);
-    }
+    db.query('SELECT * FROM department', (err, res) => {
+        if (err) throw err;
+        res.forEach(department => {
+            let depObj = {
+            name: department.dep_name,
+            value: department.id
+            };
+            departmentList.push(depObj);
+        });
     });
     inquirer.prompt(questions).then((response) => {
         const dbQuery = `INSERT INTO employee_role (title, salary, department_id) VALUES (?)`;
         db.query(dbQuery, [[response.roleTitle, response.roleSalary, response.roleDepartment]], (err) => {
             if (err) throw err;
-            console.log(`Role ${response.roleTitle} successfully added!`)
+            console.log(`Role ${response.roleTitle} successfully added!`);
+            userOptions();
         });
-        userOptions();
-    });
+    }).catch(err => console.error(err));
 }
 
 function addEmployee() {
     const roleList = [];
-    const managerList = [];
-        const questions = [
+    // if employee does not have a manager
+    const employeeData = [
+    {
+        name: 'N/A',
+        value: 0
+    }
+    ];
+    const questions = [
         {
             type: 'input',
             name: 'firstName',
@@ -176,60 +175,60 @@ function addEmployee() {
             type: 'list',
             name: 'employeeRole',
             choices: roleList,
-            message: "What is the employees role?"
+            message: "What is the employee's role?"
         },
         {
             type: 'list',
             name: 'employeeManager',
-            choices: managerList,
-            message: "Who is the employee's manager? (Skip this question if not applicable)"
+            choices: employeeData,
+            message: "Who is this employee's manager? (Skip this question if not applicable)"
         }
     ];
 
-    try {
-        db.query('SELECT * FROM employee', (res) => {
-            let employeeData = [
-                {
-                    firstName,
-                    lastName,
-                    employeeID
-                }
-            ];
-            res.forEach(({firstName, lastName, employeeID}) => {
-                employeeData.push({
-                    firstName,
-                    lastName,
-                    employeeID
-                });
+    db.query('SELECT * FROM employee', (err, res) => {
+        if (err) throw err;
+        res.forEach(({ first_name, last_name, id }) => {
+            employeeData.push({
+                name: first_name + ' ' + last_name,
+                value: id,
             });
         });
+    });
 
-        db.query('SELECT * FROM employee_role', (res) => {
-            res.forEach(({roleTitle, id}) => {
-                roleList.push({
-                    roleTitle,
-                    id
-                });
+    db.query('SELECT * FROM employee_role', (err, res) => {
+        if (err) throw err;
+        res.forEach(({title, id}) => {
+            roleList.push({
+                name: title,
+                value: id
             });
         });
-    } catch (err) {
-        console.error(err);
-    }
+    });
+
     inquirer.prompt(questions).then((response) => {
-        const dbQuery = `INSERT INTO employee (title, salary, department_id) VALUES (?)`;
+        const dbQuery = `INSERT INTO employee (first_name, last_name, role_id, manager_id) VALUES (?)`;
         let employeeManager = response.employeeManager !== 0 ? response.employeeManager : null;
         db.query(dbQuery, [[response.firstName, response.lastName, response.employeeRole, employeeManager]], (err) => {
             if (err) throw err;
             console.log(`Employee ${response.firstName} ${response.lastName} successfully added!`);
             userOptions();
         });
-    })
+    }).catch(err => console.error(err));
 }
 
 function updateEmployee() {
-    let employeeList = [];
-    let roleList = []
-    let questions = [
+    db.query('SELECT * FROM employee', (err, res) => {
+    if (err) throw err;
+    const employeeList = [];
+    res.forEach(({first_name, last_name, id}) => {
+        employeeList.push({
+            name: first_name + ' ' + last_name,
+            value: id,
+            });
+        });
+    
+    const roleList = [];
+    const questions = [
         {
             type: 'list',
             name: 'selectedEmployee',
@@ -237,39 +236,29 @@ function updateEmployee() {
             message: "Who's role do you wish to update?"
         },
         {
-        type: "list",
-        name: "selectedRole",
-        choices: roleList,
-        message: "What new role do you wish to assign this employee?"
+            type: "list",
+            name: "selectedRole",
+            choices: roleList,
+            message: "What new role do you wish to assign this employee?"
         }
     ];
-
-    db.query('SELECT * FROM employee', (err, res) => {
-        res.forEach(({firstName, lastName, id}) => {
-            employeeList.push({
-                firstName,
-                lastName,
-                id
+    db.query('SELECT * FROM employee_role', (err, res) => {
+        if (err) throw err;
+        res.forEach(({title, id}) => {
+            roleList.push({
+                name: title,
+                value: id
+                });
             });
-        });
-    });
-
-    db.query('SELECT * FROM employee_role', (res) => {
-    res.forEach(({roleTitle, id}) => {
-        roleList.push({
-            roleTitle,
-            id
-            });
-        });
     });
 
     inquirer.prompt(questions).then((response) => {
         const dbQuery = `UPDATE EMPLOYEE SET ? WHERE ?? = ?;`;
-        db.query(dbQuery, [ {selectedRole: response.selectedRole}, "id", response.selectedEmployee],
-        (err) => {
+        db.query(dbQuery, [ {role_id: response.selectedRole}, "id", response.selectedEmployee], (err) => {
             if (err) throw err;
             console.log("Successfully updated employee's role!");
             userOptions();
         });
-    })
+    }).catch(err => console.error(err));
+    });
 }
